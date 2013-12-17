@@ -370,8 +370,11 @@ class AbstractProduct(models.Model):
         if not self.slug:
             self.slug = slugify(self.get_title())
 
-        # Validate attributes if necessary
-        self.attr.validate_attributes()
+        # Allow attribute validation to be skipped.  This is required when
+        # saving a parent product which belongs to a product class with
+        # required attributes.
+        if kwargs.pop('validate_attributes', True):
+            self.attr.validate_attributes()
 
         # Save product
         super(AbstractProduct, self).save(*args, **kwargs)
@@ -505,33 +508,6 @@ class AbstractProduct(models.Model):
             return queryset.count() == self.stockrecords.count()
         else:
             return queryset.exists()
-
-    @property
-    def min_variant_price_incl_tax(self):
-        """
-        Return minimum variant price including tax
-        """
-        return self._min_variant_price('price_incl_tax')
-
-    @property
-    def min_variant_price_excl_tax(self):
-        """
-        Return minimum variant price excluding tax
-        """
-        return self._min_variant_price('price_excl_tax')
-
-    def _min_variant_price(self, property):
-        """
-        Return minimum variant price
-        """
-        prices = []
-        for variant in self.variants.all():
-            if variant.has_stockrecords:
-                prices.append(getattr(variant.stockrecord, property))
-        if not prices:
-            return None
-        prices.sort()
-        return prices[0]
 
     # Wrappers
 
@@ -945,6 +921,11 @@ class AbstractAttributeOptionGroup(models.Model):
         abstract = True
         verbose_name = _('Attribute Option Group')
         verbose_name_plural = _('Attribute Option Groups')
+
+    @property
+    def option_summary(self):
+        options = [o.option for o in self.options.all()]
+        return ", ".join(options)
 
 
 class AbstractAttributeOption(models.Model):
