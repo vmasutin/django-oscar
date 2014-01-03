@@ -495,19 +495,32 @@ class AbstractProduct(models.Model):
             return False, _("No stock available")
         return self.stockrecord.is_purchase_permitted(user, quantity, self)
 
-    def is_user_a_partner_user(self, user, match_all=False):
+    @property
+    def min_variant_price_incl_tax(self):
         """
-        The stockrecords of this product are linked to a fulfilment partner,
-        which have a M2M field for a list of users.
+        Return minimum variant price including tax
+        """
+        return self._min_variant_price('price_incl_tax')
 
-        This function tests whether a given user is in any (match_all=False) or
-        all (match_all=True) of those user lists.
+    @property
+    def min_variant_price_excl_tax(self):
         """
-        queryset = user.partners.filter(stockrecords__product=self)
-        if match_all:
-            return queryset.count() == self.stockrecords.count()
-        else:
-            return queryset.exists()
+        Return minimum variant price excluding tax
+        """
+        return self._min_variant_price('price_excl_tax')
+
+    def _min_variant_price(self, property):
+        """
+        Return minimum variant price
+        """
+        prices = []
+        for variant in self.variants.all():
+            if variant.has_stockrecords:
+                prices.append(getattr(variant.stockrecord, property))
+        if not prices:
+            return None
+        prices.sort()
+        return prices[0]
 
     # Wrappers
 
@@ -580,19 +593,25 @@ class AbstractProduct(models.Model):
             rating = float(reviews_sum) / reviews_count
         return rating
 
-    def add_category_from_breadcrumbs(self, breadcrumb):
-        from oscar.apps.catalogue.categories import create_from_breadcrumbs
-        category = create_from_breadcrumbs(breadcrumb)
-
-        temp = get_model('catalogue', 'ProductCategory')(
-            category=category, product=self)
-        temp.save()
-    add_category_from_breadcrumbs.alters_data = True
-
     def has_review_by(self, user):
         if user.is_anonymous():
             return False
         return self.reviews.filter(user=user).exists()
+
+    def is_review_permitted(self, user):
+        """
+        Determines whether a user may add a review on this product.
+
+        Default implementation respects OSCAR_ALLOW_ANON_REVIEWS and only
+        allows leaving one review per user and product.
+
+        Override this if you want to alter the default behaviour; e.g. enforce
+        that a user purchased the product to be allowed to leave a review.
+        """
+        if user.is_authenticated() or settings.OSCAR_ALLOW_ANON_REVIEWS:
+            return not self.has_review_by(user)
+        else:
+            return False
 
 
 class ProductRecommendation(models.Model):
